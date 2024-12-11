@@ -3,10 +3,6 @@ import pandas as pd
 import numpy as np
 
 #
-# The UI and design for this App use references and is based on Darin's Campuswire posts.
-#
-
-#
 # Predicting Ratings with Item-Based Similarity
 #
 def generate_recommendations(user_ratings: pd.Series, similarity_frame: pd.DataFrame, backup_ids: pd.Series, all_movies: pd.DataFrame, top_k: int = 10) -> list[str]:
@@ -31,28 +27,24 @@ def generate_recommendations(user_ratings: pd.Series, similarity_frame: pd.DataF
     # compute predicted ratings for all movies user didn't rate
     missing_indices = predictions.index[predictions.isna()]
     for movie_id in missing_indices:
-        # weighted average rating using similarity
         weighted_sum = similarity_frame.loc[movie_id].mul(clean_ratings, axis=0).sum(skipna=True)
         total_sim = similarity_frame.loc[movie_id][clean_ratings.notna()].sum(skipna=True)
 
-        # only predict if denominator is not zero
         if total_sim != 0:
             predictions[movie_id] = weighted_sum / total_sim
 
-    # sort by predicted rating (descending) for items not originally rated by user
+    # sort by predicted rating (descending) for items not rated by user
     pred_candidates = predictions[clean_ratings.isna()].dropna().sort_values(ascending=False)
     final_recs = pred_candidates.index[:top_k].tolist()
 
-    # if we have fewer than needed, use backup list to fill the rest
+    # if fewer than top_k, use backup list filtered to ensure presence in all_movies
     if len(final_recs) < top_k:
         already_used = set(clean_ratings.dropna().index).union(set(final_recs))
-        # Filter backup_ids to include only those present in all_movies and not already used
         valid_backup = [m for m in backup_ids if m not in already_used and m in all_movies["MovieID"].values]
         shortfall = top_k - len(final_recs)
         final_recs += valid_backup[:shortfall]
 
     return final_recs
-
 
 #
 # Load External Data and Resources
@@ -65,7 +57,12 @@ sim_matrix = pd.read_parquet(similarity_data_url)
 all_movies = pd.read_csv(movie_data_url)
 all_movies['MovieID'] = all_movies['MovieID'].astype(str)
 
-# for demonstration purposes, we select the first 15 movies to be rated by the user
+# Ensure sim_matrix and all_movies have consistent movie sets
+common_ids = sim_matrix.index.intersection(all_movies["MovieID"])
+sim_matrix = sim_matrix.loc[common_ids, common_ids]
+all_movies = all_movies[all_movies["MovieID"].isin(common_ids)].reset_index(drop=True)
+
+# for demonstration, select first 15 movies to rate
 initial_selection = all_movies.head(15)
 
 #
@@ -76,19 +73,15 @@ st.set_page_config(page_title="Movie Recommender", layout="wide")
 st.title("Movie Recommender")
 st.subheader("Step 1: Rate as many movies as possible")
 
-# we'll split the set of selected movies into two parts:
-# Part 1: the first 10 movies (2 rows x 5 columns)
+# Split the selected movies into two groups
 front_section = initial_selection.iloc[:10]
-# Part 2: the remaining 5 movies displayed below in a scrollable section
 additional_section = initial_selection.iloc[10:]
 
 user_feedback = {}
 
-# use an expander for rating
 with st.expander("Rate movies (click to expand/collapse)", expanded=True):
     st.write("### Movies to Rate")
     top_layout = st.columns(5)
-    # display the first 10 items (5 per row)
     for idx, (_, item) in enumerate(front_section.iterrows()):
         with top_layout[idx % 5]:
             st.image(item["image_url"], width=150)
@@ -101,7 +94,6 @@ with st.expander("Rate movies (click to expand/collapse)", expanded=True):
             )
             user_feedback[item["MovieID"]] = rating_choice if rating_choice else 0
 
-    # additional movies in scrollable container
     st.write("### Scroll to Rate More Movies")
     extra_cols = st.columns(5)
     for idx, (_, row_data) in enumerate(additional_section.iterrows()):
@@ -117,23 +109,18 @@ with st.expander("Rate movies (click to expand/collapse)", expanded=True):
             user_feedback[row_data["MovieID"]] = rating_choice if rating_choice else 0
 
 
-#
-# Step 2: Generate and Show Recommendations
-#
 st.subheader("Step 2: Discover movies you might like")
 
 if st.button("Click here to get your recommendations"):
-    # create a user rating profile compatible with the similarity matrix
     user_profile = pd.Series(index=sim_matrix.index, data=np.nan)
     for m_id, rate in user_feedback.items():
         if rate > 0:
             user_profile[m_id] = rate
 
-    # generate top 10 recommendations
     proposed_list = generate_recommendations(user_profile, sim_matrix, all_movies["MovieID"], all_movies, top_k=10)
     st.write("Your movie recommendations:")
 
-    # display recommendations in two rows of 5 columns each
+    # Show 5 recommendations per row
     top_row = st.columns(5)
     for i in range(5):
         movie_id = proposed_list[i]
