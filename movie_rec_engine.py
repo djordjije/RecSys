@@ -133,19 +133,17 @@ if st.button("Click here to get your recommendations"):
     proposed_list = generate_recommendations(user_profile, sim_matrix, all_movies["MovieID"], all_movies, top_k=10)
     st.write("Your movie recommendations:")
 
-    # display recommendations in two rows of 5 columns each
-    top_row = st.columns(5)
+    # display recommendations 1-5 and 6-10 in two rows
+    rec_display = st.columns(5)
     for i in range(5):
         movie_id = proposed_list[i]
         info = all_movies.loc[all_movies["MovieID"] == movie_id]
-        with top_row[i]:
-            st.image(info["image_url"].values[0], width=150, caption=f"Rank {i+1}")
-            st.write(info["Title"].values[0])
+        # info should never be empty now, as we filtered backups
+        st.image(info["image_url"].values[0], width=150, caption=f"Rank {i+1}")
+        st.write(info["Title"].values[0])
 
-    bottom_row = st.columns(5)
-    for i in range(5, 10):
-        movie_id = proposed_list[i]
+    for i in range(5):
+        movie_id = proposed_list[i+5]
         info = all_movies.loc[all_movies["MovieID"] == movie_id]
-        with bottom_row[i-5]:
-            st.image(info["image_url"].values[0], width=150, caption=f"Rank {i+1}")
-            st.write(info["Title"].values[0])
+        st.image(info["image_url"].values[0], width=150, caption=f"Rank {i+6}")
+        st.write(info["Title"].values[0])
